@@ -9,6 +9,10 @@
 use Joomla\CMS\Language\Text;
 
 extract($displayData);
+foreach ($categories as $category)
+{
+    if ($category->level>=2) $category->title=str_repeat(' -',$category->level-1).$category->title;
+}
 ?>
 <div id="js-cfi-well" class="cfi-well hidden">
     <button id="js-cfi-wellclose" type="button" class="close">×</button>
@@ -19,13 +23,14 @@ extract($displayData);
     </div>
 
     <div class="cfi-cb-block">
-        <label><input id="js-cfi-convert" class="cfi-cb" type="checkbox" value="1" checked><?php echo Text::sprintf('PLG_CFI_CB_UTF_CONVERT', $cp); ?></label>
+        <label><input id="js-cfi-convert" class="cfi-cb" type="checkbox" <?php
+            if ($convert==1) { echo " value=1 checked ";} else { echo ' value="0" ';} ?> ><?php echo Text::sprintf('PLG_CFI_CB_UTF_CONVERT', $cp); ?></label>
     </div>
 
     <div id="js-cfi-expzone" class="cfi-export">
         <select id="js-cfi-categories">
             <option value="0" selected><?php echo Text::_('PLG_CFI_SELECT_CATEGORIES'); ?></option>
-            <?php foreach ($categories as $category) { ?>
+            <?php foreach ($categories as $category) { var_dump($category);?>
             <option value="<?php echo $category->id; ?>"><?php echo $category->title; ?></option>
             <?php } ?>
         </select>

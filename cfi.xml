@@ -25,6 +25,10 @@
     <config>
         <fields name="params">
             <fieldset name="basic">
+                <field name="convert" type="radio" label="PLG_CFI_PARAM_CONVERT" class="btn-group" default="0">
+                <option value="0">JNO</option>
+                <option value="1">JYES</option>
+                </field>
                 <field name="cp" type="list" label="PLG_CFI_PARAM_CP" default="CP1251">
                     <option value="7bit">7bit</option>
                     <option value="8bit">8bit</option>

@@ -25,7 +25,7 @@ use Joomla\CMS\MVC\Model\BaseDatabaseModel;
 
 class plgSystemCfi extends CMSPlugin
 {
-    const BOM = "\xEF" . "\xBB" . "\xBF"; // UTF BOM signature
+    public $BOM = "\xEF" . "\xBB" . "\xBF";
     
     private $_app;
     private $_doc;
@@ -117,10 +117,10 @@ class plgSystemCfi extends CMSPlugin
 
         $db = Factory::getDbo();
         $query = $db->getQuery(true)
-            ->select('id, title')
+            ->select('id, title, level, parent_id')
             ->from('#__categories')
             ->where('extension = "com_content"')
-            ->order('title');
+            ->order('lft');
         $db->setQuery($query);
         try {
             $categories = $db->loadObjectList();
@@ -136,7 +136,8 @@ class plgSystemCfi extends CMSPlugin
             $wellParams = [
                 'cp' => $this->_cp, 
                 'categories' => $categories, 
-                'showdesc' => $this->params->get('showdesc', 1)
+                'showdesc' => $this->params->get('showdesc', 1),
+                'convert' => $this->params->get('convert', 0)
             ];
             $content = str_replace($matches[0], $matches[0] . $well->render($wellParams), $content);
             $html = isset($head) ? ($head . '</head>' . $content) : $content;
@@ -256,7 +257,7 @@ class plgSystemCfi extends CMSPlugin
         $content = trim(file_get_contents($this->_file));
         
         // convert to UTF-8
-        if ($this->_app->input->get('cficonvert', false)) {
+        if ($this->_app->input->get('cficonvert', false)=='true') {
             $content = mb_convert_encoding($content, 'UTF-8', $this->_cp);
         }
 
@@ -293,6 +294,7 @@ class plgSystemCfi extends CMSPlugin
         $reservedColumns = [
             'articleid',
             'articlecat',
+            'categoryname',
             'articletitle',
             'articlelang',
             'articleintrotext',
@@ -330,12 +332,20 @@ class plgSystemCfi extends CMSPlugin
 
             // get missing article values
             $articleData['articlecat'] = array_key_exists('articlecat', $articleData) && in_array($articleData['articlecat'], $categories) ? $articleData['articlecat'] : $categories[0];
+            $articleData['categoryname'] = array_key_exists('categoryname', $articleData) ? $articleData['categoryname'] : '';
             $articleData['articlelang'] = array_key_exists('articlelang', $articleData) ? $articleData['articlelang'] : '*';
             $articleData['articleintrotext'] = array_key_exists('articleintrotext', $articleData) ? $articleData['articleintrotext'] : '';
             $articleData['articlefulltext'] = array_key_exists('articlefulltext', $articleData) ? $articleData['articlefulltext'] : '';
-            
+
             // get article instance
             $article = Table::getInstance('content');
+
+            $cats = JCategories::getInstance('Content');
+            $cat = $cats->get();
+
+            $childrenFull=array_column( (array) $cat->getChildren(true),'id','path');
+            //die(var_dump($childrenFull));
+
 
             if ($articleData['articleid']) {
                 // load existing article item
@@ -356,7 +366,12 @@ class plgSystemCfi extends CMSPlugin
                 $article->alias = OutputFilter::stringURLSafe($article->title);
                 $article->introtext = $articleData['articleintrotext'];
                 $article->fulltext = $articleData['articlefulltext'];
-                $article->catid = $articleData['articlecat'];
+                //die(var_dump($articleData['articlecat']));
+                if ($articleData['categoryname']=='') { $article->catid = $articleData['articlecat']; }
+                else {
+                    // die(var_dump($articleData['categoryname']));
+                    $article->catid = $childrenFull[$articleData['categoryname']];
+                }
                 $article->language = $articleData['articlelang'];
                 $article->created = Factory::getDate()->toSql();
                 $article->created_by = explode(':', $this->_user)[0];
@@ -455,15 +470,35 @@ class plgSystemCfi extends CMSPlugin
             $this->_printJson($data['result']);
         }
 
+        //let`s check category have some children
+        $catID = JRequest::getVar('id');
+        $categories = JCategories::getInstance('Content');
+        $cat = $categories->get($catID);
+        $childrenFull=array_column($cat->getChildren(true),null,'id');
+        $children =array_column( $cat->getChildren(true),'id');
+        //die(var_dump(count($children)));
+
         // get articles
         $db = Factory::getDbo();
         $query = $db->getQuery(true)
-            ->select('id, title, language, introtext, \'fulltext\'')
+            ->select('id, title, language, catid, introtext, `fulltext` ')
             ->from('#__content')
             ->where('state >= 0')
-            ->where('catid = ' . (int)$catid)
+            //->where('catid = ' . (int)$catid)
             ->order('id');
+        if (count($children)==0)
+        {
+            $query->where('catid = ' . (int)$catid);
+        }
+        else
+            {
+                $in=implode(",",$children);
+
+                $query->where("catid IN ( $in )" );
+            }
+
         $db->setQuery($query);
+        //die(var_dump($query->dump()));
         try {
             $articles = $db->loadObjectList();
         } catch (Exception $e) {
@@ -490,6 +525,7 @@ class plgSystemCfi extends CMSPlugin
         $columns = [
             'articleid',
             'articlecat',
+            'categoryname',
             'articletitle',
             'articlelang',
             'articleintrotext',
@@ -505,7 +541,8 @@ class plgSystemCfi extends CMSPlugin
         foreach ($articles as $article) {
             $outItem = [];
             $outItem[] = $article->id;
-            $outItem[] = $catid;
+            $outItem[] = $article->catid;
+            $outItem[] = $childrenFull[$article->catid]->path;
             $outItem[] = str_replace(["\n", "\r"], '', $article->title);
             $outItem[] = str_replace(["\n", "\r"], '', $article->language);
             $outItem[] = str_replace(["\n", "\r"], '', $article->introtext);
@@ -529,7 +566,7 @@ class plgSystemCfi extends CMSPlugin
         unset($articles, $jsFields);
         
         // convert
-        if ($this->_app->input->get('cficonvert', false)) {
+        if ($this->_app->input->get('cficonvert', false)=='true') {
             $contentIn = file_get_contents($this->_file);
             if ($contentIn !== false) {
                 $content = mb_convert_encoding($contentIn, $this->_cp, 'UTF-8');
